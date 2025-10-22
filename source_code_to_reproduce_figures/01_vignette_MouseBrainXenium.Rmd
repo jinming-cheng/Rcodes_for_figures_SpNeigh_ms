@@ -1,0 +1,778 @@
+---
+title: "SpNeigh analysis of mouse brain Xenium data"
+author:
+  - name: Jinming Cheng
+    affiliation:
+    - &duk_nus Centre for Quantitative Medicine,
+               Duke-NUS Medical School,
+               Singapore, 169857, 
+               Singapore
+    # email: jinming.cheng@outlook.com
+    
+
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+vignette: >
+  %\VignetteIndexEntry{SpNeigh analysis of mouse brain Xenium data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+
+output:
+  BiocStyle::html_document:
+    toc_float: false
+bibliography-style: plain
+---
+
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+<!-- %                                                 % -->
+
+
+# Mouse Brain Xenium
+
+This Rmarkdown file includes the SpNeigh analysis of mouse brain tiny Xenium dataset to reproduce all the related figures in the SpNeigh manuscript.
+
+## Data preparation
+
+Load packages
+```{r, message=FALSE, warning=FALSE}
+library(SpNeigh)
+library(Seurat)
+library(ggplot2)
+```
+
+
+Read in processed Seurat object of mouse brain Xenium data
+```{r}
+xenium.obj <- readRDS("data/Mouse_brain_tiny_xenium_object.rds")
+dim(xenium.obj)
+```
+
+
+```{r,include=FALSE}
+figure_path = "figures/vigette_mouse_brain_xenium/"
+knitr::opts_chunk$set(
+    eval = TRUE,
+    collapse = TRUE,
+    comment = "#>",
+    out.width = "100%",
+    dev = "png",
+    dpi = 72,
+    fig.height = 4.2,
+    fig.width = 5.6,
+    fig.path = figure_path
+)
+```
+
+Extract coordinates from Xenium object
+```{r}
+coords <- SpNeigh::ExtractCoords(xenium.obj)
+rownames(coords) <- coords$cell
+head(coords)
+```
+
+Backup clusters 
+```{r}
+coords$raw_cluster <- coords$cluster
+```
+
+
+Define function to sort factor levels by decreasing number
+```{r}
+FactorSorted = function(x, decreasing = TRUE){
+  x = factor(x)
+  ordered_levels = sort(table(x),decreasing = decreasing)
+  x = factor(x, levels = names(ordered_levels) )
+  x
+}
+```
+
+
+Cluster-level cell type
+```{r}
+new_cell_types = c("0"="Meninges",
+                   "1"="Cerebral_cortex",
+                   "2"="White_matter",
+                   "3"="Cerebral_cortex",
+                   "4"="Cerebral_cortex",
+                   "5"="Thalamus",
+                   "6"="Cerebral_cortex",
+                   "7"="Hippocampus",
+                   "8"="Hippocampus",
+                   "9"="Hippocampus",
+                   "10"="White_matter",
+                   "11"="Cerebral_cortex")
+coords$cluster_level_cell_type <- factor(coords$raw_cluster,
+                                         levels = names(new_cell_types),
+                                         labels = new_cell_types)
+coords$cluster_level_cell_type <- FactorSorted(coords$cluster_level_cell_type)
+table(coords$cluster_level_cell_type)
+```
+
+Read in SingleR annotation (predicted by `SingleR()`, code not shown)
+```{r}
+SingleR_cell_type <-readRDS("data/Mouse_brain_SingleR_cell_type.rds")
+```
+
+
+The raw cell types from SingleR prediction were manually merged 
+to reduce redundancy.
+```{r}
+coords$SingleR_cell_type_raw <- SingleR_cell_type$raw_cell_type
+coords$SingleR_cell_type_merged <- SingleR_cell_type$new_cell_type
+```
+
+The raw SingleR annotation has 42 cell types
+```{r}
+nlevels(coords$SingleR_cell_type_raw)
+```
+The manually merged SingleR annotation has 10 cell types, 
+which was used in the main figure 2
+```{r}
+nlevels(coords$SingleR_cell_type_merged)
+```
+
+
+Extract normalized expression data
+```{r}
+logNorm_expr <- Seurat::GetAssayData(xenium.obj)
+```
+
+```{r}
+class(logNorm_expr)
+```
+
+
+<!-- %                                                 % -->
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+
+
+
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+<!-- %                                                 % -->
+
+
+## SpNeigh analysis
+
+
+### Figure 1 
+
+(For illustration purpose)  
+
+Figure 1b-1. Detect boundaries.
+```{r fig1b_1, fig.width=5.6, fig.height=4.2}
+boundary_points_c2 <- GetBoundary(data = xenium.obj, one_cluster = 2, eps=120)
+PlotBoundary(coords, boundary = boundary_points_c2,
+             sub_plot = TRUE, one_cluster = 2) +
+  Seurat::NoAxes() + Seurat::NoLegend()
+```
+
+Figure 1b-2. Detect boundaries (Rings).
+```{r fig1b_2, fig.width=5.6, fig.height=4.2}
+outer_boundary_c2 <- GetOuterBoundary(boundary = boundary_points_c2)
+PlotBoundary(coords, boundary = boundary_points_c2, 
+             sub_plot = TRUE, one_cluster = 2) +
+  AddBoundary(outer_boundary_c2, color_boundary = "blue") +
+  Seurat::NoAxes() + Seurat::NoLegend()
+  
+```
+Figure 1c-1. Boundary weights
+```{r fig1c_1, fig.width=5.6, fig.height=4.2}
+cells_c2 <- subset(coords, cluster == "2")[,"cell"]
+bon_weights_c2 <- ComputeBoundaryWeights(coords, 
+                                         cell_ids = cells_c2,
+                                         boundary = boundary_points_c2)
+PlotWeights(coords, 
+            weights = bon_weights_c2, 
+            point_size = 0.8) + 
+  Seurat::NoAxes() + Seurat::NoLegend() + 
+  ggplot2::ggtitle("Boundary weights")
+```
+
+Figure 1c-2. Centroid weights.
+```{r fig1c_2, fig.width=5.6, fig.height=4.2}
+cells_c2 <- subset(coords, cluster == "2")[,"cell"]
+cen_weights_c2 <- ComputeCentroidWeights(coords, 
+                                         cell_ids = cells_c2)
+PlotWeights(coords, 
+            weights = cen_weights_c2, 
+            point_size = 0.8) + 
+  NoAxes() + NoLegend() +  ggtitle("Centroid weights")
+```
+
+Figure 1d-1. Proportion of cells in neighborhood rings
+```{r fig1d_1, fig.width=5.6, fig.height=3}
+ring_c2 <- GetRingRegion(boundary = boundary_points_c2,
+                         outer_boundary = outer_boundary_c2)
+cells_in_ring_c2 <- GetCellsInside(coords,boundary = ring_c2)
+cell_stats_ring_c2 <- StatsCellsInside(cells_in_ring_c2)
+PlotStatsPie(cell_stats_ring_c2, add_labels = FALSE) + 
+  Seurat::NoLegend()
+```
+
+Figure 1d-2. Interaction matrix
+```{r fig1d_2, fig.width=5.6, fig.height=4.2}
+interact_mat_ring_c2 <- 
+  ComputeSpatialInteractionMatrix(
+    subset(coords, cell %in% cells_in_ring_c2$cell)
+    )
+PlotInteractionMatrix(interact_mat_ring_c2)
+```
+
+Figure 1e-1. RunLimmaDE
+```{r fig1e_1, fig.width=4, fig.height=3}
+# uses tab results from RunLimmaDE from Figure 2
+tab <- readRDS("data/Mouse_brain_tab_c2_RunLimmaDE.rds")
+
+df <- tab[,c("logFC","adj.P.Val")]
+df$trend <- ifelse(df$logFC>0,"positive","negative")
+
+ggplot(data = df,
+       aes(x=logFC,y= -log10(adj.P.Val), color=trend)) +
+  geom_point() + my_theme_ggplot() + NoLegend() +
+  labs(x="log2FC", y = "-log10(adj.Pval)", title = "RunLimmaDE" ) +
+  coord_flip() +
+  theme(plot.title=element_text(size=13, face="bold",hjust=0.5)) +
+  scale_color_manual(values = scales::hue_pal()(2)[c(2,1)] )
+```
+
+
+Figure 1e-2. RunSpatialDE
+```{r fig1e_2, fig.width=4, fig.height=3}
+tab_bon_c2 <- RunSpatialDE(exp_mat = logNorm_expr[,cells_c2], 
+                           cell_ids = cells_c2, 
+                           spatial_distance = bon_weights_c2)
+
+df <- tab_bon_c2[1:10,]
+df <- dplyr::arrange(df, desc(abs(Z1)))
+df <- dplyr::mutate(df, gene = factor(gene, levels = gene[order(Z1)]))
+
+ggplot(df, aes(x = gene, y = Z1, fill = trend)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = NULL, y = "Z1", fill="Trend", title = "RunSpatialDE" ) + 
+  theme_minimal() + NoLegend() + 
+  theme(plot.title=element_text(size=13, face="bold",hjust=0.5)) +
+  scale_fill_manual(values = scales::hue_pal()(2)[c(2,1)] )
+```
+
+Figure 1e-3. ComputeSEI
+```{r fig1e_3, fig.width=4, fig.height=3}
+sei_bon_c2 <- ComputeSpatialEnrichmentIndex(logNorm_expr[,cells_c2], 
+                                            weights = bon_weights_c2)
+df <- sei_bon_c2[1:10,]
+df <- dplyr::mutate(df, 
+                    gene = factor(gene, levels = df$gene) )
+
+ggplot(df, aes(x = gene, y = (normalized_SEI - 1) )) +
+  geom_col( fill = "mediumturquoise") +
+  coord_flip() +
+  labs(x = NULL, y = "Norm_SEI - 1", title = "ComputeSEI" ) + 
+  theme_minimal() + NoLegend() + 
+  theme(plot.title=element_text(size=13, face="bold",hjust=0.5))
+```
+
+<!-- %                                                 % -->
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+
+
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+<!-- %                                                 % -->
+
+### Figure 2
+
+Figure 2a-1. Clusters.
+```{r fig2a_1, fig.width=5.6, fig.height=3.5}
+coords$cluster <- coords$raw_cluster
+PlotBoundary(coords, boundary = boundary_points_c2) + NoAxes()
+```
+
+Figure 2a-2. Cluster-level annotation.
+```{r fig2a_2, fig.width=6, fig.height=3.5}
+# set cluster as cluster_level_cell_type
+coords$cluster <- coords$cluster_level_cell_type
+PlotBoundary(coords) + NoAxes()
+```
+
+Figure 2a-3. Cell-level annotation (manually merged).
+```{r fig2a_3, fig.width=6, fig.height=3.5}
+# set cluster as SingleR_cell_type_merged
+coords$cluster <- coords$SingleR_cell_type_merged
+PlotBoundary(coords) + NoAxes()
+```
+
+Set raw cluster back
+```{r}
+coords$cluster <- coords$raw_cluster
+```
+
+
+Figure 2b-1. Boundary regions.
+```{r fig2b_1, fig.width=5.6, fig.height=2.8}
+boundary_polys_c2 <- BuildBoundaryPoly(boundary_points_c2)
+PlotRegion(boundary_poly = boundary_polys_c2) + NoAxes()
+```
+
+Figure 2b-2. Ring regions.
+```{r fig2b_2, fig.width=5.6, fig.height=2.8}
+PlotRegion(boundary_poly = ring_c2) + NoAxes()
+```
+
+Figure 2b-3. Cells inside boundaries.
+```{r fig2b_3, fig.width=4.8, fig.height=2.8}
+cells_in_bon_c2 <- GetCellsInside(coords, boundary = boundary_polys_c2)
+PlotCellsInside(cells_in_bon_c2) + NoAxes() + NoLegend()
+```
+
+Figure 2b-4. Donut plot of stats of cells inside boundary.
+```{r fig2b_4, fig.width=2, fig.height=2, out.width='50%'}
+cells_in_bon_c2 <- GetCellsInside(coords, boundary = boundary_polys_c2)
+
+cell_stats_bon_c2 <- StatsCellsInside(cells_in_bon_c2)
+PlotStatsPie(subset(cell_stats_bon_c2, region_id=="1"), 
+             plot_donut = TRUE,label_cutoff = 0.1) + 
+  NoAxes() + NoLegend()
+```
+
+Figure 2b-5. Cells inside boundaries.
+```{r fig2b_5, fig.width=4.8, fig.height=2.8}
+PlotCellsInside(cells_in_ring_c2) + NoAxes() + NoLegend()
+```
+
+Figure 2b-6. Donut plot of stats of cells inside ring
+```{r fig2b_6, fig.width=2, fig.height=2, out.width='50%'}
+PlotStatsPie(subset(cell_stats_ring_c2, region_id=="1"), 
+             plot_donut = TRUE,label_cutoff = 0.05) + 
+  NoAxes() + NoLegend()
+```
+
+Figure 2c-1. Expression plot of Slc17a7
+```{r fig2c_1, fig.width=4, fig.height=2.8}
+# Obtain cluster 2 cells inside and outside boundary of sub region
+cells_in <- subset(cells_in_bon_c2, region_id==1 & cluster==2)[["cell"]]
+cells_out <- subset(cells_in_ring_c2, region_id==1 & cluster==2)[["cell"]]
+tab <- RunLimmaDE(exp_mat = logNorm_expr,
+                  min.pct = 0.25,
+                  cells_reference = cells_in,
+                  cells_target = cells_out)
+tab[1:5,c("logFC", "adj.P.Val", "pct.reference", "pct.target")]
+
+PlotExpression(data = coords, 
+               exp_mat = logNorm_expr, 
+               genes = "Slc17a7",
+               sub_plot = TRUE,
+               sub_cells = c(cells_in, cells_out) ) + 
+  AddBoundary(boundary_polys_c2[1,], linewidth_boundary = 0.6) +
+  NoAxes() + theme(legend.position = "bottom")
+```
+
+<!-- # save tab into rds file to reproduce figure 1e-1 -->
+<!-- ```{r, include=FALSE} -->
+<!-- saveRDS(tab, file = "data/Mouse_brain_tab_c2_RunLimmaDE.rds") -->
+<!-- ``` -->
+
+
+Figure 2c-2. Expression plot of Sox10.
+```{r fig2c_2, fig.width=4, fig.height=2.8}
+PlotExpression(data = coords, 
+               exp_mat = logNorm_expr, 
+               genes = "Sox10",
+               sub_plot = TRUE,
+               sub_cells = c(cells_in, cells_out) ) + 
+  AddBoundary(boundary_polys_c2[1,], linewidth_boundary = 0.6) +
+  NoAxes() + theme(legend.position = "bottom")
+```
+
+Figure 2d. Split boundary 1 into edges.
+```{r fig2d, fig.width=5.6, fig.height=2.8}
+boundary_edges_c2 <- SplitBoundaryPolyByAnchor(boundary_polys_c2[1,])
+PlotEdge(boundary_edges_c2) + NoAxes() + labs(color=NULL)
+```
+
+
+Figure 2e. Boundary weights to edge 2 for cerebral cortex cells.
+```{r fig2e, fig.width=5.6, fig.height=3.6}
+cells_cortex <- subset(
+  coords, cluster_level_cell_type=="Cerebral_cortex")$cell
+bon_weights_edge2 <- ComputeBoundaryWeights(
+  coords, 
+  cell_ids = cells_cortex, 
+  boundary = boundary_edges_c2[2,])
+
+PlotWeights(coords, weights = bon_weights_edge2) + 
+  NoAxes() +
+  AddBoundary(boundary_edges_c2[2,], linewidth_boundary = 0.8)
+```
+
+Figure 2f. Plot expression along spatial weights.
+```{r fig2f, fig.width=5.6, fig.height=3.6}
+tab_sp <- RunSpatialDE(exp_mat = logNorm_expr,
+                       cell_ids = cells_cortex,
+                       spatial_distance = bon_weights_edge2)
+
+PlotSpatialExpression(exp_mat = logNorm_expr[,cells_cortex],
+                      genes = tab_sp$gene[1:10], 
+                      spatial_distance = bon_weights_edge2)
+```
+
+Figure 2g. Expression of Ccn2 and Cplx3 in cell types near edge2.
+```{r fig2g, fig.width=8, fig.height=4}
+keep_celltypes = c("L4/5/6", "L6 Car3", "L6b",
+                   "Astrocytes", "Oligodendrocytes")
+cells_keep = subset(coords,SingleR_cell_type_merged %in% keep_celltypes)$cell
+
+p1 <- PlotExpression(data = coords, 
+                     exp_mat = logNorm_expr,
+                     genes = c("Ccn2"),
+                     sub_plot = TRUE, 
+                     sub_cells = cells_keep, 
+                     split_by = "SingleR_cell_type_merged",
+                     ncol = 4) + NoAxes()
+
+p2 <- PlotExpression(data = coords, 
+                     exp_mat = logNorm_expr,
+                     genes = c("Cplx3"),
+                     sub_plot = TRUE, 
+                     sub_cells = cells_keep, 
+                     split_by = "SingleR_cell_type_merged",
+                     ncol = 4) + NoAxes()
+
+patchwork::wrap_plots(p1, p2, ncol = 1)
+```
+
+
+
+<!-- %                                                 % -->
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+
+
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+<!-- %                                                 % -->
+
+### Figure 3
+
+Figure 3a. Benchmarking runtime.
+```{r record_runtime}
+running_time <- list()
+
+# Running time of RunLimmaDE
+one_method <- "RunLimmaDE"
+t_start <- Sys.time()
+tab_list <- list()
+my_clusters <- levels(coords$cluster_level_cell_type)
+for (i in my_clusters) {
+  cells_i <- coords$cell[coords$cluster_level_cell_type == i]
+  cells_other <- coords$cell[coords$cluster_level_cell_type != i]
+  
+  tab_list[[i]] <- RunLimmaDE(exp_mat = logNorm_expr, 
+                             cells_reference = cells_other,
+                             cells_target = cells_i)
+  tab_list[[i]]$gene <- rownames(tab_list[[i]]) 
+  tab_list[[i]]$cluster = i 
+}
+
+t_end <- Sys.time()
+t_diff <- difftime(t_end, t_start,units = "secs")
+running_time[[one_method]][["t_start"]]  <- t_start
+running_time[[one_method]][["t_end"]]  <- t_end
+running_time[[one_method]][["t_diff"]]  <- t_diff
+
+# Running time of find all markers
+one_method = "FindAllMarkers"
+xenium.obj$cluster_level_cell_type <- coords$cluster_level_cell_type
+xenium.obj@active.ident <- xenium.obj$cluster_level_cell_type
+t_start <- Sys.time()
+markers <- FindAllMarkers(xenium.obj, min.pct = 0)
+t_end <- Sys.time()
+t_diff <- difftime(t_end, t_start,units = "secs")
+running_time[[one_method]][["t_start"]]  <- t_start
+running_time[[one_method]][["t_end"]]  <- t_end
+running_time[[one_method]][["t_diff"]]  <- t_diff
+```
+
+```{r fig3a, fig.width=3, fig.height=3}
+df <- do.call(rbind,lapply(running_time,as.data.frame))
+a <- round(as.numeric(df$t_diff),2)
+a <- cbind.data.frame("Method" = rownames(df), "RunningTime" = a)
+a$Method <- factor(a$Method,levels = c("RunLimmaDE","FindAllMarkers"))
+a$Package <-  factor(a$Method,
+                     levels = c("RunLimmaDE","FindAllMarkers"), 
+                     labels = c("SpNeigh","Seurat"))
+
+ggplot(data=a, aes(x=Method, y=RunningTime,fill=Package)) + 
+  geom_col() + 
+  labs(x=NULL, y="Seconds", fill="") + 
+  my_theme_ggplot() + 
+  RotatedAxis() +
+  geom_text(aes(label = RunningTime), vjust=-0.5, size=4) +
+  ylim(c(0,35)) + 
+  labs(title = "Running time")
+```
+
+Fiure 3b. Dot plot of top marker genes from RunLimmaDE
+```{r fig3b, fig.width=8,fig.height=4}
+top_tab <- lapply(tab_list, function(x){head(subset(x,logFC>0), n = 3 )})
+top_tab <- do.call(rbind,top_tab)
+
+my_genes <- unique(top_tab$gene)
+
+df <- t(logNorm_expr[my_genes,])
+df <- as.data.frame(df)
+df$cluster <- coords$cluster_level_cell_type
+
+library(tidyr)
+library(dplyr)
+# Pivot longer to tidy format
+df_long <- df %>% 
+  pivot_longer(cols = -cluster, names_to = "gene", values_to = "expr")
+
+# Group by cluster and gene, then summarize
+summary_df <- df_long %>%
+  group_by(cluster, gene) %>%
+  summarise(
+    avg_expr = mean(expr),
+    pct_expressed = mean(expr > 0) * 100,
+    .groups = "drop"
+  )
+
+summary_df$gene = factor(summary_df$gene, levels = my_genes)
+
+ggplot( data = summary_df, 
+        aes(x=cluster,y=gene, size=pct_expressed, color=avg_expr) ) +
+  geom_point() +
+  my_theme_ggplot() +
+   ggplot2::scale_color_viridis_c(
+    option = "plasma",
+    oob = scales::squish #  replaces out of bounds values with the nearest limit.
+    ) + 
+  scale_size( limits = c(0,100),  range = c(1,5) )+
+  ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)) +
+  labs(color = "AvgExp",size="Percent",x=NULL,y=NULL)  + coord_flip()
+
+```
+
+Figure 3c. Spearman correlation of two DE methods.
+```{r fig3c, fig.width=8,fig.height=2}
+markers_list <- split(markers,markers$cluster)
+
+# prepare data for plot
+df <- list()
+my_clusters <- levels(coords$cluster_level_cell_type)
+for (i in my_clusters) {
+  # RunLimmaDE markers
+  a <- tab_list[[i]]
+  rownames(a) <- a$gene
+  
+  # FindAllMarkers markers
+  b <- markers_list[[i]]
+  rownames(b) <- b$gene
+  
+  common_genes <- intersect(a$gene,b$gene)
+  # logFC
+  df[[i]] <- 
+    data.frame("RunLimmaDE" = a[common_genes,"logFC"],
+               "FindAllMarkers" = b[common_genes,"avg_log2FC"],
+               "Cluster" = i)
+}
+
+df = do.call(rbind,df)
+
+# Plot correlation
+coef_spearman = cor(df$RunLimmaDE,df$FindAllMarkers, method = "spearman")
+coef_spearman = round(coef_spearman,2)
+
+p_title <- bquote("Overall log2FC correlation: Spearman " 
+                  * rho == .(coef_spearman))
+ggplot(data = df, 
+       aes(x = RunLimmaDE, y = FindAllMarkers, colour = Cluster)) +
+  geom_point(size = 0.3) + facet_wrap(.~Cluster, ncol=5) + 
+  geom_smooth(method = "lm",size=0.8, se = FALSE) +
+  labs(title = p_title,
+       x = "RunLimmaDE",
+       y = "FindAllMarkers") +
+  scale_color_manual(values = my_colors_15) +
+  my_theme_ggplot() + 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=13, face="bold"),
+        plot.title=element_text(size=15, face="bold",hjust=0.5) ) +
+  NoLegend() + theme(plot.margin = margin(t = 0.2, b = 0, r =  0.2, l = 0.2, "cm"))
+```
+
+Figure 3d-1. Boundary weights of C0 cells.
+```{r fig3d_1, fig.width=5.6, fig.height=3.6}
+cells_c0 <- subset(coords, cluster == "0")[,"cell"]
+bon_points_c0 <- GetBoundary(data = coords, one_cluster = 0)
+bon_weights_c0 <- ComputeBoundaryWeights(coords, cell_ids = cells_c0,
+                                         boundary = bon_points_c0)
+PlotWeights(coords, weights = bon_weights_c0) + NoAxes()
+```
+
+Figure 3d-2. Centroid weights of C0 cells.
+```{r fig3d_2, fig.width=5.6, fig.height=3.6}
+cen_weights_c0 <- ComputeCentroidWeights(coords, cell_ids = cells_c0)
+PlotWeights(coords, weights = cen_weights_c0) + NoAxes()
+```
+
+Figure 3e-1. Spearman correlation of two spatial methods (boundary weights).
+```{r fig3e_1, fig.width=4, fig.height=3}
+tab_sp_c0 <- RunSpatialDE(exp_mat = logNorm_expr, cell_ids = cells_c0,
+                          spatial_distance = bon_weights_c0)
+sei_bon_c0 <- ComputeSpatialEnrichmentIndex(logNorm_expr[,cells_c0],
+                                            weights = bon_weights_c0)
+my_tab <- tab_sp_c0
+my_sei <- sei_bon_c0
+
+rownames(my_sei) <- my_sei$gene
+common_genes <- intersect(my_sei$gene, my_tab$gene)
+
+df <- cbind.data.frame(my_sei[common_genes,],
+                       my_tab[common_genes,"Z1",drop = FALSE])
+
+df$rank_normalized_SEI <- rank(-df$normalized_SEI)
+df$rank_Z1 <- rank(-df$Z1)
+
+df$rank_normalized_SEI <- rank(-df$normalized_SEI)
+df$rank_Z1 <- rank(-df$Z1)
+
+coef_spearman <- cor(df$rank_normalized_SEI, df$rank_Z1,method = "spearman")
+coef_spearman <- round(coef_spearman, 2)
+
+ggplot(data = df, 
+       aes(x=rank_normalized_SEI,y=rank_Z1)) + 
+    geom_point(size = 0.5) + 
+    my_theme_ggplot() + 
+    labs(title = bquote("Spearman " * rho == .(coef_spearman)),
+         x = "Rank of Norm SEI",
+         y = "Rank of Z1 (Boun)") + 
+  theme(axis.title=element_text(size=12, face="bold")) +
+  geom_smooth(method = "lm",se = FALSE)
+```
+
+Figure 3e-2. Spearman correlation of two spatial methods (centroid weights).
+```{r fig3e_2, fig.width=4, fig.height=3}
+tab_sp_cen_c0 <- RunSpatialDE(exp_mat = logNorm_expr, cell_ids = cells_c0,
+                              spatial_distance = cen_weights_c0)
+sei_cen_c0 <- ComputeSpatialEnrichmentIndex(logNorm_expr[,cells_c0],
+                                            weights = cen_weights_c0)
+my_tab <- tab_sp_cen_c0
+my_sei <- sei_cen_c0
+
+rownames(my_sei) <- my_sei$gene
+common_genes <- intersect(my_sei$gene, my_tab$gene)
+
+df <- cbind.data.frame(my_sei[common_genes,],
+                       my_tab[common_genes,"Z1",drop = FALSE])
+
+df$rank_normalized_SEI <- rank(-df$normalized_SEI)
+df$rank_Z1 <- rank(-df$Z1)
+
+coef_spearman <- cor(df$rank_normalized_SEI, df$rank_Z1,method = "spearman")
+coef_spearman <- round(coef_spearman, 2)
+
+ggplot(data = df, 
+       aes(x=rank_normalized_SEI,y=rank_Z1)) + 
+    geom_point(size = 0.5) + 
+    my_theme_ggplot() + 
+    labs(title = bquote("Spearman " * rho == .(coef_spearman)),
+         x = "Rank of Norm SEI",
+         y = "Rank of Z1 (Cen)") + 
+  theme(axis.title=element_text(size=12, face="bold")) +
+  geom_smooth(method = "lm",se = FALSE)
+```
+Figure 3f. Top spatial DE genes (boundary).
+```{r fig3f, fig.width=5, fig.height=3}
+df <- tab_sp_c0[1:10,]
+df <- dplyr::arrange(df, desc(abs(Z1)))
+df <- dplyr::mutate(df, gene = factor(gene, levels = gene[order(Z1)]))
+
+ggplot(df, aes(x = gene, y = Z1, fill = trend)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("Positive" = "firebrick1", 
+                               "Negative" = "cornflowerblue")) +
+  labs(x = NULL, y = "Z1", fill="Trend", 
+       title = "Top spatial DE genes") +
+  theme_minimal() +
+  theme(plot.title=element_text(face="bold",  hjust=0.5)) 
+```
+
+Figure 3g. Top enriched genes from SEI (boundary)
+```{r fig3g, fig.width=5, fig.height=3}
+df <- sei_cen_c0[1:10,]
+df <- dplyr::mutate(df, gene = factor(gene, levels = df$gene) )
+
+ggplot(df, aes(x = gene, y = (normalized_SEI - 1) )) +
+  geom_col( fill = "mediumturquoise") +
+  coord_flip() +
+  labs(x = NULL, y = "Norm_SEI - 1",
+       title = "Top enriched genes (SEI)") +
+  theme_minimal() +
+  theme(plot.title=element_text(face="bold",  hjust=0.5)) 
+```
+<!-- %                                                 % -->
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+
+
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+<!-- %                                                 % -->
+
+### Supplementary Figure 1
+
+Figure S1a. Cell-level annotation (raw).
+```{r figS1a, fig.width=8, fig.height=3.5}
+ggsci_d3_20 <- ggsci::pal_d3("category20")(20)
+my_colors_20 <- c(my_colors_15, 
+                  "gray60","gray40","royalblue2","mediumblue","black")
+
+# set cluster as SingleR_cell_type_raw
+coords$cluster <- coords$SingleR_cell_type_raw
+PlotBoundary(coords, colors = c(my_colors_20, ggsci_d3_20)) + 
+  labs(color=NULL) +
+  NoAxes()
+```
+
+Figure S1b. Expression of Slc17a7 and Sox10.
+```{r figS1b, fig.width=8, fig.height=2.5}
+my_genes = c("Slc17a7", "Sox10")
+
+p <- list()
+for (i in my_genes) {
+  p[[i]] <- PlotExpression(data = coords, exp_mat = logNorm_expr,
+                           genes = i) + 
+    NoAxes()
+}
+patchwork::wrap_plots(p, ncol = 2)
+```
+
+
+Figure S1c. Expression of Ccn2 and Cplx3
+```{r figS1c, fig.width=8, fig.height=2.5}
+my_genes = c("Ccn2", "Cplx3")
+
+p <- list()
+for (i in my_genes) {
+  p[[i]] <- PlotExpression(data = coords, exp_mat = logNorm_expr,
+                           genes = i) + 
+    NoAxes()
+}
+patchwork::wrap_plots(p, ncol = 2)
+```
+<!-- %                                                 % -->
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+
+
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+<!-- %                                                 % -->
+
+
+<!-- %                                                 % -->
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+
+## Session information
+
+The information of current R session and packages used for this analysis is shown below.
+
+```{r}
+sessionInfo()
+```
+
+
+\pagebreak

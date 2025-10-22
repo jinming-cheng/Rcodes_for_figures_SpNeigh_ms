@@ -1,0 +1,520 @@
+---
+title: "SpNeigh analysis of human HER2+ breast cancer Xenium data"
+author:
+  - name: Jinming Cheng
+    affiliation:
+    - &duk_nus Centre for Quantitative Medicine,
+               Duke-NUS Medical School,
+               Singapore, 169857, 
+               Singapore
+    # email: jinming.cheng@outlook.com
+    
+
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+vignette: >
+  %\VignetteIndexEntry{SpNeigh analysis of mouse brain Xenium data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+
+output:
+  BiocStyle::html_document:
+    toc_float: false
+bibliography-style: plain
+---
+
+
+```{r,include=FALSE}
+figure_path = "figures/vigette_human_breast_cancer_xenium/"
+knitr::opts_chunk$set(
+    eval = TRUE,
+    collapse = TRUE,
+    comment = "#>",
+    out.width = "100%",
+    dev = "png",
+    dpi = 72,
+    fig.height = 4.2,
+    fig.width = 5.6,
+    fig.path = figure_path
+)
+```
+
+
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+<!-- %                                                 % -->
+
+
+# Human breast cancer Xenium
+
+This Rmarkdown file includes the SpNeigh analysis of human HER2+ breast cancer Xenium dataset (Sample 1) to reproduce all the related figures in the SpNeigh manuscript.
+
+## Data preparation
+
+Load packages
+```{r, message=FALSE, warning=FALSE}
+library(SpNeigh)
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+```
+
+
+Read in processed Seurat object of human breast cancer Xenium data 
+from [Cheng et al](https://doi.org/10.1186/s12859-025-06044-0)
+```{r}
+xenium.obj <- readRDS("data/Human_breast_cancer_sample1_xenium_object.rds")
+dim(xenium.obj)
+```
+
+The SingleR annotation is used for SpNeigh manuscript, and it is
+available at: https://github.com/jinming-cheng/cheng_annotation_bmc_bioinfo.
+```{r}
+xenium.obj$seurat_clusters <- xenium.obj$predicted_cell_type_SingleR
+```
+
+
+Extract coordinates from Xenium object
+```{r}
+coords <- SpNeigh::ExtractCoords(xenium.obj)
+rownames(coords) <- coords$cell
+head(coords)
+```
+
+Define function to sort factor levels by decreasing number
+```{r}
+FactorSorted = function(x, decreasing = TRUE){
+  x = factor(x)
+  ordered_levels = sort(table(x),decreasing = decreasing)
+  x = factor(x, levels = names(ordered_levels) )
+  x
+}
+```
+
+Relevel cluster by decreasing number
+```{r}
+coords$cluster <- FactorSorted(coords$cluster)
+table(coords$cluster)
+```
+
+Set colors
+```{r}
+my_colors <- c("#6495ED", "#FF3030", "#FFD700", "#BF3EFF", "#00FA9A", 
+               "#48D1CC", "#ADFF2F", "#FFA500", "gray40",  "#8B6914",
+               "#FFC0CB", "gray60",  "#FF00FF", "#EE82EE", "#00FFFF",
+               "#E5E5E5")
+names(my_colors) <- levels(coords$cluster)
+```
+
+
+Extract normalized expression data
+```{r}
+logNorm_expr <- Seurat::GetAssayData(xenium.obj)
+```
+
+```{r}
+class(logNorm_expr)
+```
+
+
+<!-- %                                                 % -->
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+
+
+
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+<!-- %                                                 % -->
+
+
+## SpNeigh analysis
+
+
+### Figure 4 
+
+Figure 4a-1. Spatial plot with neighborhood rings.
+```{r fig4a_1, fig.width=6, fig.height=2.8}
+bon_points_tumor <- GetBoundary(coords, one_cluster = "Tumor")
+bon_polys_tumor <- BuildBoundaryPoly(bon_points_tumor)
+rings_tumor <- GetRingRegion(bon_polys_tumor)
+
+bon_points_dcis <- GetBoundary(coords, one_cluster = "DCIS")
+bon_polys_dcis <- BuildBoundaryPoly(bon_points_dcis)
+rings_dcis <- GetRingRegion(bon_polys_dcis)
+
+
+PlotBoundary(coords, colors = my_colors) + 
+  AddBoundaryPoly(rings_tumor, 
+                  linewidth_boundary = 0.6, 
+                  color_boundary = "blue") +
+  AddBoundaryPoly(rings_dcis, 
+                  linewidth_boundary = 0.6, 
+                  color_boundary = "yellow2" ) +
+  guides(color=guide_legend( ncol=2, override.aes = list(size=2) ) ) +
+  Seurat::NoAxes()
+```
+
+
+
+Figure 4a-2. Neighborhood rings.
+```{r fig4a_2, fig.width=4, fig.height=2.8}
+ggplot() + 
+  AddBoundaryPoly(rings_tumor, 
+                  linewidth_boundary = 0.4, 
+                  color_boundary = "blue") +
+  AddBoundaryPoly(rings_dcis, 
+                  linewidth_boundary = 0.4, 
+                  color_boundary = "yellow2" ) +
+  theme_minimal() +
+  Seurat::NoAxes()
+```
+
+
+Obtain cells insides tumor rings (takes about 5 minutes)
+```{r}
+t_start <- Sys.time()
+cells_inside_ring_tumor <- GetCellsInside(coords, boundary = rings_tumor)
+t_end <- Sys.time()
+t_diff <- difftime(t_end, t_start,units = "mins")
+round(t_diff,2) 
+```
+
+Figure 4b-1. Plot cells in neighborhood rings (Tumor).
+```{r fig4b_1, fig.width=4, fig.height=2.8}
+PlotCellsInside(cells_inside_ring_tumor, point_size = 0.1) + 
+  NoAxes() + NoLegend()
+```
+
+Obtain cells insides dcis rings (takes about 0.8 minutes)
+```{r}
+t_start <- Sys.time()
+cells_inside_ring_dcis <- GetCellsInside(coords, boundary = rings_dcis)
+t_end <- Sys.time()
+t_diff <- difftime(t_end, t_start,units = "mins")
+round(t_diff,2) 
+```
+
+Figure 4b-2. Plot cells inside neighborhood rings (DCIS).
+```{r fig4b_2, fig.width=4, fig.height=2.8}
+PlotCellsInside(cells_inside_ring_dcis, point_size = 0.1) + 
+  NoAxes() + NoLegend()
+```
+
+
+Figure 4c-1. Cell type proportion in neighborhood (Tumor).
+```{r fig4c_1, fig.width=3, fig.height=2.8, out.width="60%"}
+cell_stats_rings_tumor <- StatsCellsInside(cells_inside_ring_tumor)
+cell_stats_rings_tumor_combined <- cell_stats_rings_tumor  %>%
+  group_by(cluster) %>%
+  summarise(total = sum(count)) %>% 
+  mutate(proportion = total/sum(total), 
+         region_id = "combined") %>% 
+  rename("count" = "total")
+
+PlotStatsPie(cell_stats_rings_tumor_combined, plot_donut = TRUE, 
+             label_nudge_x = 0.05, colors = my_colors, 
+             label_cutoff = 0.02) + 
+  theme(strip.text = element_blank()) + NoLegend()
+```
+
+Figure 4c-2. Cell type proportion in neighborhood (DCIS).
+```{r fig4c_2, fig.width=3, fig.height=2.8, out.width="60%"}
+cell_stats_rings_dcis <- StatsCellsInside(cells_inside_ring_dcis)
+cell_stats_rings_dcis_combined <- cell_stats_rings_dcis  %>%
+  group_by(cluster) %>%
+  summarise(total = sum(count)) %>% 
+  mutate(proportion = total/sum(total), 
+         region_id = "combined") %>% 
+  rename("count" = "total")
+
+PlotStatsPie(cell_stats_rings_dcis_combined, plot_donut = TRUE, 
+             label_nudge_x = 0.05, colors = my_colors, 
+             label_cutoff = 0.02) + 
+  theme(strip.text = element_blank()) + NoLegend()
+```
+
+Figure 4d-1. Cell type interaction in neighborhood (Tumor).
+```{r fig4d_1, fig.width=5.6, fig.height=4.2}
+interaction_mat_rings_tumor <- ComputeSpatialInteractionMatrix(
+  subset(coords, cell %in% cells_inside_ring_tumor$cell))
+
+PlotInteractionMatrix(interaction_mat_rings_tumor) +
+  labs(title = "Tumor Neighborhood")
+```
+
+Figure 4d-2. Cell type interaction in neighborhood (DCIS).
+```{r fig4d_2, fig.width=5.6, fig.height=4.2}
+interaction_mat_rings_dcis <- ComputeSpatialInteractionMatrix(
+  subset(coords, cell %in% cells_inside_ring_dcis$cell))
+
+PlotInteractionMatrix(interaction_mat_rings_dcis) +
+  labs(title = "Tumor Neighborhood")
+```
+
+
+Figure 4e. Spatial distribution of major immune cell types.
+```{r fig4e, fig.width=8, fig.height=2}
+df <- coords[coords$cluster %in% c("Macrophage", "T","B","Plasma"),]
+PlotBoundary(df, point_size = 0.01,
+             split_by = "cluster", ncol = 4,
+             colors = my_colors) + 
+  AddBoundaryPoly(bon_polys_tumor, color_boundary = "blue",  
+                  linewidth_boundary = 0.6) +
+  AddBoundaryPoly(bon_polys_dcis, color_boundary = "yellow2",  
+                  linewidth_boundary = 0.6) + 
+  NoAxes() +
+  NoLegend()
+```
+
+Differential proportion tests between tumor and DCIS neighborhood using t.test, 
+p.value for T cells is `0.012`
+```{r}
+res_test_prop <- list()
+for (i in c(levels(coords$cluster))) {
+  test_prop <- t.test(subset(cell_stats_rings_tumor, cluster==i)$proportion,
+                      subset(cell_stats_rings_dcis, cluster==i)$proportion)
+  res_test_prop[[i]] <- c(cluster=i, p_value = round(test_prop$p.value,3))
+}
+
+res_test_prop = as.data.frame(do.call(rbind, res_test_prop))
+res_test_prop = res_test_prop[order(res_test_prop$p_value),]
+res_test_prop
+```
+
+
+Figure 4f. Bar plot comparing T cell proportions between 
+tumor and DCIS neighbor rings.
+```{r fig4f, fig.width=8, fig.height=2}
+# tumor neighborhood T cells
+df1 <- subset(cell_stats_rings_tumor, cluster=="T")[,c("region_id", "proportion")]
+df1$Rings <- "Tumor"
+df1$region_id <- paste0("r1_",df1$region_id)
+
+# DCIS neighborhood T cells
+df2 <- subset(cell_stats_rings_dcis, cluster=="T")[,c("region_id", "proportion")]
+df2$Rings <- "DCIS"
+df2$region_id <- paste0("r2_",df2$region_id)
+
+df <- rbind(df1, df2)
+df$Rings = factor(df$Rings, levels = c("Tumor", "DCIS"))
+df$region_id = FactorNaturalOrder(df$region_id)
+
+ggplot(data = df, 
+       aes(x = region_id, y = proportion, fill = Rings) ) + 
+  geom_col() + my_theme_ggplot() + 
+  theme( axis.ticks.x  = element_blank(),
+         axis.text.x = element_blank() ) +
+  labs(x = NULL, y = "Proportion",
+       title = bquote("T cells (p =" ~ .("0.012") * ")") ) +
+  scale_fill_manual(values = c("blue", "yellow2")) + 
+  ggplot2::scale_y_continuous(labels = scales::percent_format())
+```
+
+<!-- %                                                 % -->
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+
+
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+<!-- %                                                 % -->
+
+### Figure 5
+
+Figure 5a. Spatial plot of tumor and DCIS cells.
+```{r fig5a, fig.width=4, fig.height=2.8}
+PlotBoundary(coords[subset(coords, cluster %in% c("Tumor","DCIS"))$cell,],
+             point_size = 0.1, 
+             colors = my_colors) + 
+  NoAxes() + NoLegend() +
+  AddBoundary(bon_polys_tumor, color_boundary = "blue",  
+              linewidth_boundary = 1) +
+  AddBoundary(bon_polys_dcis, color_boundary = "yellow2",
+              linewidth_boundary = 1)
+```
+
+Figure 5b. DCIS location relative to tumor.
+```{r fig5b, fig.width=4, fig.height=2.8}
+new_polys <- bon_polys_dcis
+new_polys$region_id <- ifelse(new_polys$region_id==1,"In","Out")
+
+PlotRegion(new_polys) + NoAxes()
+```
+
+DE analysis between DCIS cells inside and outside tumor
+```{r}
+cells_dcis_in_tumor <- GetCellsInside(data = coords, 
+                                      boundary = bon_polys_dcis[1,])
+
+cells_dcis_out_tumor <- GetCellsInside(data = coords, 
+                                       boundary = bon_polys_dcis[-1,])
+
+cells_ref <- cells_dcis_out_tumor$cell
+cells_tar <- cells_dcis_in_tumor$cell
+tab_de <- RunLimmaDE(exp_mat = logNorm_expr[,c(cells_ref, cells_tar)],
+                     cells_reference = cells_ref,
+                     cells_target = cells_tar)
+head(tab_de)[,c(1,5,7,8)]
+```
+
+
+Figure 5c. Expression of TENT5C and MZB1 in tumor and DCIS cells.
+```{r fig5c, fig.width=6.4, fig.height=4.8}
+cells_tumor <- subset(coords, cluster=="Tumor")$cell
+cells_DICS <- subset(coords, cluster=="DCIS")$cell
+
+my_genes = c("TENT5C", "MZB1")
+p <- list()
+for (i in my_genes) {
+
+  p[[i]] <- 
+    PlotExpression(data = coords,
+                   exp_mat = logNorm_expr,
+                   genes = i,
+                   split_by = "cluster", 
+                   point_size = 0.1,
+                   sub_plot = TRUE,
+                   sub_cells = c(cells_tumor,cells_DICS)) + 
+    NoAxes() + 
+    ggplot2::scale_color_viridis_c(option = "plasma", oob = scales::squish,
+                                   limits = c(0, 6) ) +
+    AddBoundary(bon_points_tumor, color_boundary = "blue", 
+                linewidth_boundary = 1) 
+}
+
+patchwork::wrap_plots(p, ncol = 1)
+```
+
+Figure 5d. Tumor centroid weights.
+```{r fig5d, fig.width=4, fig.height=2.8}
+cen_weights_tumor <- ComputeCentroidWeights(coords, cell_ids = cells_tumor)
+
+PlotWeights(coords, weights = cen_weights_tumor) + NoAxes()
+```
+
+Spatial DE of tumor cells along centroid weights
+```{r}
+tab_cen_tumor <- RunSpatialDE(exp_mat = logNorm_expr, 
+                             cell_ids = cells_tumor,
+                             spatial_distance = cen_weights_tumor)
+head(tab_cen_tumor[,c(1:3,7:9)])
+```
+
+Figure 5e. Top DE genes along tumor centroid weights.
+```{r fig5e, fig.width=4, fig.height=2.8}
+df <- tab_cen_tumor[1:10,]
+df <- dplyr::arrange(df, desc(abs(Z1)))
+df <- dplyr::mutate(df, gene = factor(gene, levels = gene[order(Z1)]))
+
+ggplot(df, aes(x = gene, y = Z1, fill = trend)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("Positive" = "firebrick1", 
+                               "Negative" = "cornflowerblue")) +
+  labs(x = "Gene", y = "Z1", fill="Trend",
+       title = "Top tumor spatial DE genes") +
+  theme_minimal()
+```
+
+Spatial enrichment analysis near centroid
+```{r}
+sei_cen_tumor <- 
+  ComputeSpatialEnrichmentIndex(exp_mat = logNorm_expr[,cells_tumor],
+                                weights = cen_weights_tumor)
+head(sei_cen_tumor)
+```
+
+
+Figure 5f. Top spatially enriched genes in tumor cells based on normalized SEI.
+```{r fig5f, fig.width=4, fig.height=2.8}
+df <- sei_cen_tumor[1:10,]
+df <- dplyr::mutate(df, gene = factor(gene, levels = df$gene) )
+
+ggplot(df, aes(x = gene, y = 1000*(normalized_SEI - 1) )) +
+  geom_col( fill = "mediumturquoise") +
+  coord_flip() +
+  labs(x = "Gene", y = "1000*(Norm_SEI - 1)", 
+       title = "Genes with top normalized SEI")  +
+  theme_minimal()
+```
+
+
+
+Figure 5g. Expression of CEACAM6, AGR3 and DUSP2 in tumor and DCIS cells.
+```{r fig5g, fig.width=6.4, fig.height=7.2}
+my_genes = c("CEACAM6", "AGR3", "DUSP2")
+p <- list()
+for (i in my_genes) {
+
+  p[[i]] <- 
+    PlotExpression(data = coords,
+                   exp_mat = logNorm_expr,
+                   genes = i,
+                   split_by = "cluster", 
+                   point_size = 0.1,
+                   sub_plot = TRUE,
+                   sub_cells = c(cells_tumor,cells_DICS)) + 
+    NoAxes() + 
+    ggplot2::scale_color_viridis_c(option = "plasma", oob = scales::squish,
+                                   limits = c(0, 6) ) +
+    AddBoundary(bon_polys_dcis[1,], color_boundary = "red", 
+                linewidth_boundary = 1) 
+}
+
+patchwork::wrap_plots(p, ncol = 1)
+```
+
+
+<!-- %                                                 % -->
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+
+
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+<!-- %                                                 % -->
+
+### Supplementary Figure 2
+
+Figure S2a. Expression of TENT5C split by clusters.
+```{r figS2a, fig.width=8, fig.height=6}
+PlotExpression(data = coords, 
+               exp_mat = logNorm_expr,
+               genes = "TENT5C", 
+               point_size = 0.1,
+               split_by = "cluster") +
+  NoAxes() + 
+  ggplot2::scale_color_viridis_c(
+    option = "plasma",
+    limits = c(0, 6),
+    oob = scales::squish)
+```
+
+Figure S2b. Expression of MZB1 split by clusters.
+```{r figS2b, fig.width=8, fig.height=6}
+PlotExpression(data = coords, 
+               exp_mat = logNorm_expr,
+               genes = "MZB1", 
+               point_size = 0.1,
+               split_by = "cluster") +
+  NoAxes() + 
+  ggplot2::scale_color_viridis_c(
+    option = "plasma",
+    limits = c(0, 6),
+    oob = scales::squish)
+```
+
+<!-- %                                                 % -->
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+
+
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+<!-- %                                                 % -->
+
+
+<!-- %                                                 % -->
+<!-- %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% -->
+
+## Session information
+
+The information of current R session and packages used for this analysis is shown below.
+
+```{r}
+sessionInfo()
+```
+
+
+\pagebreak
